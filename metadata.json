@@ -1,0 +1,5 @@
+{
+  "name": "Copy of Interactive API Documentation Generator",
+  "description": "A dashboard to interactively create professional, well-structured API documentation. Input endpoint details, schemas, and examples to generate clean Markdown output, similar to Swagger or Postman.",
+  "requestFramePermissions": []
+}
