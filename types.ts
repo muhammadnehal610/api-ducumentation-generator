@@ -1,4 +1,3 @@
-
 export type HTTPMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH' | 'OPTIONS' | 'HEAD';
 
 export const httpMethods: HTTPMethod[] = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS', 'HEAD'];
@@ -13,10 +12,9 @@ export interface SchemaField {
 
 export interface Parameter {
   id:string;
-  name: string;
-  type: string;
+  key: string;
+  value: string;
   description: string;
-  required: boolean;
 }
 
 export interface Header {
@@ -35,12 +33,22 @@ export interface ApiResponse {
 }
 
 export interface ApiDoc {
+  id: string;
   endpoint: string;
   method: HTTPMethod;
   description: string;
+  tags: string[];
   headers: Header[];
   queryParams: Parameter[];
   requestBodyExample: string;
   requestBodySchema: SchemaField[];
   responses: ApiResponse[];
+}
+
+export interface Controller {
+  id: string;
+  name: string;
+  description: string;
+  routes: ApiDoc[];
+  globalHeaders: Header[];
 }

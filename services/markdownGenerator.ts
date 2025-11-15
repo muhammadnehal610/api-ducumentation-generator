@@ -1,5 +1,4 @@
-
-import type { ApiDoc, SchemaField, Parameter, Header, ApiResponse } from '../types';
+import type { ApiDoc, SchemaField, Parameter, Header, ApiResponse, Controller } from '../types';
 
 const generateSchemaTable = (schema: SchemaField[], title: string): string => {
   if (schema.length === 0) return '';
@@ -15,17 +14,17 @@ const generateSchemaTable = (schema: SchemaField[], title: string): string => {
 const generateParamsTable = (params: Parameter[]): string => {
   if (params.length === 0) return '';
   let table = '### Query Parameters\n\n';
-  table += '| Parameter | Type | Description | Required |\n';
-  table += '|---|---|---|---|\n';
+  table += '| Parameter | Value | Description |\n';
+  table += '|---|---|---|\n';
   params.forEach(param => {
-    table += `| \`${param.name}\` | \`${param.type}\` | ${param.description} | ${param.required ? 'Yes' : 'No'} |\n`;
+    table += `| \`${param.key}\` | \`${param.value}\` | ${param.description} |\n`;
   });
   return table + '\n';
 };
 
-const generateHeadersTable = (headers: Header[]): string => {
+const generateHeadersTable = (headers: Header[], title: string = 'Headers'): string => {
   if (headers.length === 0) return '';
-  let table = '### Headers\n\n';
+  let table = `### ${title}\n\n`;
   table += '| Key | Value | Description |\n';
   table += '|---|---|---|\n';
   headers.forEach(header => {
@@ -36,6 +35,7 @@ const generateHeadersTable = (headers: Header[]): string => {
 
 const formatJson = (jsonString: string): string => {
   try {
+    if (!jsonString.trim()) return '';
     const obj = JSON.parse(jsonString);
     return JSON.stringify(obj, null, 2);
   } catch (e) {
@@ -43,10 +43,13 @@ const formatJson = (jsonString: string): string => {
   }
 };
 
-export const generateMarkdown = (doc: ApiDoc): string => {
+export const generateMarkdown = (doc: ApiDoc, controller?: Controller): string => {
   let md = `## \`${doc.method}\` ${doc.endpoint || '/your/endpoint'}\n\n`;
   md += `${doc.description}\n\n`;
 
+  if (controller?.globalHeaders?.length) {
+    md += generateHeadersTable(controller.globalHeaders, 'Global Headers');
+  }
   md += generateHeadersTable(doc.headers);
   md += generateParamsTable(doc.queryParams);
   
@@ -75,3 +78,20 @@ export const generateMarkdown = (doc: ApiDoc): string => {
 
   return md;
 };
+
+export const generateFullMarkdown = (controllers: Controller[]): string => {
+  let fullMd = '# API Documentation\n\n';
+
+  controllers.forEach(controller => {
+    fullMd += `\n---\n\n`;
+    fullMd += `# Controller: ${controller.name}\n\n`;
+    fullMd += `${controller.description}\n\n`;
+    
+    controller.routes.forEach(route => {
+      fullMd += generateMarkdown(route, controller);
+      fullMd += `\n`;
+    });
+  });
+
+  return fullMd;
+}
