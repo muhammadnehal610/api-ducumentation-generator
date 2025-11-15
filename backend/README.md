@@ -13,7 +13,7 @@ This directory contains the Express.js and MongoDB backend for the Interactive A
 ## Prerequisites
 
 - [Node.js](https://nodejs.org/) (v18.x or later recommended)
-- [MongoDB](https://www.mongodb.com/try/download/community) installed and running locally, or a MongoDB Atlas cluster.
+- A MongoDB Atlas cluster or a local MongoDB installation.
 
 ## Setup & Installation
 
@@ -29,32 +29,19 @@ This directory contains the Express.js and MongoDB backend for the Interactive A
     npm install
     ```
 
-3.  **Create a `.env` file:**
+3.  **Check your environment file:**
 
-    Copy the example environment file:
-    ```bash
-    cp .env.example .env
-    ```
-
-4.  **Configure environment variables:**
-
-    Open the newly created `.env` file and update the `MONGODB_URI` to point to your MongoDB instance.
-
-    - **For a local MongoDB instance:**
-        `MONGODB_URI=mongodb://127.0.0.1:27017/api-docs-db`
-
-    - **For MongoDB Atlas:**
-        Replace `<user>`, `<password>`, and the cluster URL with your credentials.
-        `MONGODB_URI=mongodb+srv://<user>:<password>@cluster0.xxxxx.mongodb.net/api-docs-db?retryWrites=true&w=majority`
+    The project now includes a `.env` file with the necessary `MONGODB_URI`. Please ensure it points to your correct MongoDB database if you need to change it.
 
 ## Running the Server
 
 -   **Development Mode:**
-    This command starts the server using `nodemon`, which will automatically restart the server on file changes.
+    This command starts the server using `nodemon`, which will automatically restart on file changes.
 
     ```bash
     npm run dev
     ```
+    Look for the output `Server running on port 5000` and `MongoDB Connected...` in your terminal. This is critical for the frontend to work.
 
 -   **Production Mode:**
 
@@ -64,9 +51,20 @@ This directory contains the Express.js and MongoDB backend for the Interactive A
 
 The server will be running on the port specified in your `.env` file (default is `5000`).
 
+## Troubleshooting
+
+### "Failed to fetch" or "Could not connect to the API server" Error
+
+This is a network error that means the frontend (in your browser) could not connect to the backend server. Follow these steps to fix it:
+
+1.  **Is the backend server running?** This is the most common cause. Make sure you have run `npm run dev` inside the `backend` directory and that you see **both** the "Server running..." and "MongoDB Connected..." messages.
+2.  **Is the MongoDB URI correct?** Double-check your `.env` file. If the `MONGODB_URI` is incorrect, the server will crash right after starting.
+3.  **Are the ports correct?** The frontend expects the backend to be at `http://localhost:5000`. Ensure your `.env` file has `PORT=5000` and that no other service is using that port.
+4.  **Check for Firewall/Proxy issues:** Ensure that no firewall or network proxy is blocking local connections.
+
 ## Seeding the Database (Optional)
 
-If you want to populate the database with the initial sample data from the frontend, you can run the seed script.
+If you want to populate the database with initial sample data, run the seed script.
 
 **Warning:** This script will first **delete all existing controllers** in the database.
 
@@ -78,7 +76,7 @@ This is useful for getting a clean slate or for initial setup.
 
 ## API Endpoints
 
-The API is available under the `/api` prefix.
+The API is available under the `/api` prefix (e.g., `http://localhost:5000/api/controllers`).
 
 - `GET /api/controllers` - Get all controllers and their routes.
 - `POST /api/controllers` - Create a new controller.

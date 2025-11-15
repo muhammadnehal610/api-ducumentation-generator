@@ -1,3 +1,4 @@
+
 const Controller = require('../models/controller.model');
 
 // @desc    Get all controllers
@@ -51,7 +52,7 @@ exports.deleteController = async (req, res) => {
         if (!controller) {
             return res.status(404).json({ message: 'Controller not found' });
         }
-        res.status(200).json({ message: 'Controller deleted successfully' });
+        res.status(204).send();
     } catch (error) {
         res.status(500).json({ message: 'Server Error', error: error.message });
     }
@@ -64,7 +65,7 @@ exports.addRoute = async (req, res) => {
     try {
         const controller = await Controller.findById(req.params.id);
         if (!controller) {
-            return res.status(404).json({ message: 'Controller not found' });
+            return res.status(44).json({ message: 'Controller not found' });
         }
         controller.routes.push(req.body);
         await controller.save();

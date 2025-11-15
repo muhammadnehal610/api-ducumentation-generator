@@ -1,76 +1,13 @@
 
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { InputForm } from './components/InputForm';
 import { DocumentationPreview } from './components/DocumentationPreview';
 import { Sidebar } from './components/Sidebar';
-import type { Controller, ApiDoc } from './types';
+// Fix: Import HTTPMethod type to be used for type assertion.
+import type { Controller, ApiDoc, HTTPMethod } from './types';
 import { generateFullMarkdown } from './services/markdownGenerator';
-
-const initialId1 = crypto.randomUUID();
-const initialId2 = crypto.randomUUID();
-
-const initialControllers: Controller[] = [
-  {
-    id: initialId1,
-    name: "User Management",
-    description: "APIs for managing user accounts and profiles.",
-    globalHeaders: [
-      { id: crypto.randomUUID(), key: 'Authorization', value: 'Bearer {JWT_TOKEN}', description: 'Authentication token is required for all endpoints in this group.' },
-      { id: crypto.randomUUID(), key: 'Content-Type', value: 'application/json', description: 'All requests should use JSON.' },
-    ],
-    routes: [
-      {
-        id: initialId2,
-        endpoint: '/users/{userId}',
-        method: 'GET',
-        description: 'Retrieves the details of a specific user by their unique ID.',
-        tags: ['Users', 'Profiles'],
-        headers: [],
-        queryParams: [
-          { id: crypto.randomUUID(), key: 'include_details', value: 'true', description: 'Include extended user details.' }
-        ],
-        requestBodyExample: '',
-        requestBodySchema: [],
-        responses: [
-          {
-            id: crypto.randomUUID(),
-            statusCode: '200 OK',
-            description: 'User details retrieved successfully.',
-            bodyExample: '{\n  "id": "12345",\n  "name": "John Doe",\n  "email": "john.doe@example.com"\n}',
-            schema: [
-              { id: crypto.randomUUID(), key: 'id', type: 'string', description: 'Unique identifier for the user.', required: true },
-              { id: crypto.randomUUID(), key: 'name', type: 'string', description: 'Full name of the user.', required: true },
-              { id: crypto.randomUUID(), key: 'email', type: 'string', description: 'Email address of the user.', required: true },
-            ]
-          },
-          {
-            id: crypto.randomUUID(),
-            statusCode: '404 Not Found',
-            description: 'The requested user could not be found.',
-            bodyExample: '{\n  "error": "User not found"\n}',
-            schema: [
-              { id: crypto.randomUUID(), key: 'error', type: 'string', description: 'Description of the error.', required: true }
-            ]
-          }
-        ]
-      }
-    ]
-  }
-];
-
-const loadState = (): Controller[] => {
-  try {
-    const serializedState = localStorage.getItem('api-docs-data');
-    if (serializedState === null) {
-      return initialControllers;
-    }
-    const parsedState = JSON.parse(serializedState);
-    return parsedState.length > 0 ? parsedState : initialControllers;
-  } catch (err) {
-    console.error("Could not load state from local storage", err);
-    return initialControllers;
-  }
-};
+import * as api from './services/api';
 
 
 export type SelectedItem = {
@@ -80,21 +17,31 @@ export type SelectedItem = {
 } | null;
 
 const App: React.FC = () => {
-  const [controllers, setControllers] = useState<Controller[]>(loadState);
+  const [controllers, setControllers] = useState<Controller[]>([]);
   const [selectedItem, setSelectedItem] = useState<SelectedItem>(null);
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [feedbackMessage, setFeedbackMessage] = useState('');
-  const importFileRef = useRef<HTMLInputElement>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchData = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      const data = await api.getControllers();
+      setControllers(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch data from the server.');
+      console.error(err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    try {
-      const serializedState = JSON.stringify(controllers);
-      localStorage.setItem('api-docs-data', serializedState);
-    } catch (err) {
-      console.error("Could not save state to local storage", err);
-    }
-  }, [controllers]);
+    fetchData();
+  }, [fetchData]);
 
   useEffect(() => {
     if(feedbackMessage) {
@@ -121,23 +68,28 @@ const App: React.FC = () => {
     return null;
   }, [selectedItem, controllers]);
 
-  const handleAddController = () => {
-    const newController: Controller = {
-      id: crypto.randomUUID(),
+  const handleAddController = async () => {
+    const newControllerData = {
       name: "New Controller",
       description: "",
       routes: [],
       globalHeaders: []
     };
-    setControllers(prev => [...prev, newController]);
-    setSelectedItem({ type: 'controller', controllerId: newController.id });
+    try {
+        const newController = await api.createController(newControllerData);
+        setControllers(prev => [...prev, newController]);
+        setSelectedItem({ type: 'controller', controllerId: newController.id });
+    } catch (error) {
+        console.error("Failed to create controller", error);
+        setError(error instanceof Error ? error.message : "Could not create new controller.");
+    }
   };
   
-  const handleAddRoute = (controllerId: string) => {
-    const newRoute: ApiDoc = {
-        id: crypto.randomUUID(),
+  const handleAddRoute = async (controllerId: string) => {
+    const newRouteData = {
         endpoint: '/new-endpoint',
-        method: 'GET',
+        // Fix: Cast 'GET' to HTTPMethod to satisfy the type requirement of createRoute.
+        method: 'GET' as HTTPMethod,
         description: '',
         tags: [],
         headers: [],
@@ -146,27 +98,62 @@ const App: React.FC = () => {
         requestBodySchema: [],
         responses: []
     };
-    setControllers(prev => prev.map(c => 
-      c.id === controllerId ? { ...c, routes: [...c.routes, newRoute] } : c
-    ));
-    setSelectedItem({ type: 'route', controllerId, routeId: newRoute.id });
+    try {
+        const updatedController = await api.createRoute(controllerId, newRouteData);
+        setControllers(prev => prev.map(c => c.id === controllerId ? updatedController : c));
+        // The new route will be the last one in the array
+        const newRouteId = updatedController.routes[updatedController.routes.length - 1].id;
+        setSelectedItem({ type: 'route', controllerId, routeId: newRouteId });
+    } catch (error) {
+        console.error("Failed to create route", error);
+        setError(error instanceof Error ? error.message : "Could not create new route.");
+    }
   };
   
-  const handleDeleteController = (controllerId: string) => {
-    setControllers(prev => prev.filter(c => c.id !== controllerId));
-    if (selectedItem?.controllerId === controllerId) {
-      setSelectedItem(null);
+  const handleDeleteController = async (controllerId: string) => {
+    if (!window.confirm("Are you sure you want to delete this controller and all its routes?")) return;
+    try {
+      await api.deleteController(controllerId);
+      setControllers(prev => prev.filter(c => c.id !== controllerId));
+      if (selectedItem?.controllerId === controllerId) {
+        setSelectedItem(null);
+      }
+    } catch (error) {
+      console.error("Failed to delete controller", error);
+      setError(error instanceof Error ? error.message : "Could not delete controller.");
     }
   };
 
-  const handleDeleteRoute = (controllerId: string, routeId: string) => {
-    setControllers(prev => prev.map(c => 
-      c.id === controllerId ? { ...c, routes: c.routes.filter(r => r.id !== routeId) } : c
-    ));
-     if (selectedItem?.routeId === routeId) {
-      setSelectedItem({ type: 'controller', controllerId });
-    }
+  const handleDeleteRoute = async (controllerId: string, routeId: string) => {
+     if (!window.confirm("Are you sure you want to delete this route?")) return;
+     try {
+        const updatedController = await api.deleteRoute(controllerId, routeId);
+        setControllers(prev => prev.map(c => c.id === controllerId ? updatedController : c));
+        if (selectedItem?.routeId === routeId) {
+            setSelectedItem({ type: 'controller', controllerId });
+        }
+     } catch (error) {
+        console.error("Failed to delete route", error);
+        setError(error instanceof Error ? error.message : "Could not delete route.");
+     }
   };
+
+  const handleUpdateController = (updatedController: Controller) => {
+     setControllers(prev => prev.map(c => c.id === updatedController.id ? updatedController : c));
+  };
+  
+  const handleUpdateRoute = (controllerId: string, updatedRoute: ApiDoc) => {
+     setControllers(prev => prev.map(c => {
+        if (c.id === controllerId) {
+            return {
+                ...c,
+                routes: c.routes.map(r => r.id === updatedRoute.id ? updatedRoute : r)
+            };
+        }
+        return c;
+     }));
+  };
+
   
   const downloadFile = (content: string, filename: string, contentType: string) => {
       const blob = new Blob([content], { type: contentType });
@@ -229,41 +216,6 @@ const App: React.FC = () => {
     }
   };
 
-  const handleExportJson = () => {
-      const json = JSON.stringify(controllers, null, 2);
-      downloadFile(json, 'api-docs-backup.json', 'application/json');
-  };
-  
-  const handleImportJson = (event: React.ChangeEvent<HTMLInputElement>) => {
-      const file = event.target.files?.[0];
-      if (!file) return;
-
-      const reader = new FileReader();
-      reader.onload = (e) => {
-          try {
-              const text = e.target?.result as string;
-              const importedControllers = JSON.parse(text);
-              // Basic validation
-              if (Array.isArray(importedControllers)) {
-                  setControllers(importedControllers);
-                  setSelectedItem(null);
-                  setFeedbackMessage("Documentation restored successfully!");
-              } else {
-                  throw new Error("Invalid JSON format.");
-              }
-          } catch (error) {
-              alert("Failed to import JSON. Please check the file format.");
-              console.error(error);
-          }
-      };
-      reader.readAsText(file);
-       // Reset file input value to allow importing the same file again
-      if (importFileRef.current) {
-        importFileRef.current.value = "";
-      }
-  };
-
-
   const ExportMenu: React.FC = () => {
     const [isOpen, setIsOpen] = useState(false);
     return (
@@ -276,12 +228,13 @@ const App: React.FC = () => {
                     <button onClick={() => { handleCopyMarkdown(); setIsOpen(false); }} className="block w-full text-left px-4 py-2 text-sm text-gray-200 hover:bg-gray-600">Copy Markdown</button>
                     <button onClick={() => { handleDownloadMarkdown(); setIsOpen(false); }} className="block w-full text-left px-4 py-2 text-sm text-gray-200 hover:bg-gray-600">Download .md</button>
                     <button onClick={() => { handleDownloadHtml(); setIsOpen(false); }} className="block w-full text-left px-4 py-2 text-sm text-gray-200 hover:bg-gray-600">Download .html</button>
-                    <button onClick={() => { handleExportJson(); setIsOpen(false); }} className="block w-full text-left px-4 py-2 text-sm text-gray-200 hover:bg-gray-600 border-t border-gray-600">Export .json</button>
                 </div>
             )}
         </div>
     );
   }
+
+  const isNetworkError = error && error.startsWith('Network error:');
 
   return (
     <div className="min-h-screen bg-gray-900 text-gray-200 flex flex-col">
@@ -291,13 +244,6 @@ const App: React.FC = () => {
         </h1>
         <div className="flex items-center gap-4">
             {feedbackMessage && <span className="text-sm text-green-400 animate-fade-in">{feedbackMessage}</span>}
-             <input type="file" ref={importFileRef} onChange={handleImportJson} accept=".json" style={{display: 'none'}} />
-             <button
-                onClick={() => importFileRef.current?.click()}
-                className="bg-gray-600 hover:bg-gray-500 text-white font-semibold py-2 px-4 rounded-md text-sm transition-colors"
-             >
-                Import JSON
-             </button>
              <ExportMenu />
           <button 
             onClick={() => setIsPreviewing(!isPreviewing)}
@@ -325,16 +271,50 @@ const App: React.FC = () => {
         )}
         
         <div className="flex-grow bg-gray-900 h-full overflow-y-auto">
-            {isPreviewing ? (
+            {isNetworkError ? (
+                 <div className="p-6 md:p-10 text-gray-300 max-w-4xl mx-auto">
+                  <div className="bg-gray-800 border border-red-500/50 rounded-lg p-6">
+                    <h2 className="text-2xl font-bold text-red-400 mb-4">Backend Connection Error</h2>
+                    <p className="mb-2">{error}</p>
+                    <p className="mb-6">This usually means the backend server isn't running. Please follow these steps in a <strong>new terminal window</strong> to start it:</p>
+                    <div className="bg-gray-900 p-4 rounded-lg font-mono text-sm space-y-2">
+                      <p className="text-gray-500"># 1. Navigate to the backend directory</p>
+                      <p><span className="text-cyan-400">$</span> <span className="text-white"> cd backend</span></p>
+                      <p className="text-gray-500 pt-2"># 2. Install dependencies (if you haven't)</p>
+                      <p><span className="text-cyan-400">$</span> <span className="text-white"> npm install</span></p>
+                      <p className="text-gray-500 pt-2"># 3. Start the server</p>
+                      <p><span className="text-cyan-400">$</span> <span className="text-white"> npm run dev</span></p>
+                      <p className="text-gray-500 pt-2"># 4. Wait for these success messages:</p>
+                      <p className="text-green-400">MongoDB Connected...</p>
+                      <p className="text-green-400">Server running on port 5000</p>
+                    </div>
+                    <div className="mt-6">
+                      <p className="mb-4">Once the server is running, you can retry the connection.</p>
+                      <button onClick={fetchData} className="bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-2 px-4 rounded-md transition-colors">
+                        Retry Connection
+                      </button>
+                    </div>
+                    <div className="mt-6 border-t border-gray-700 pt-4 text-sm text-gray-400">
+                      <p><span className="font-bold">Troubleshooting:</span> If the server stops right after starting, please double-check that the `MONGODB_URI` in your `backend/.env` file is correct and that your IP address is whitelisted in MongoDB Atlas.</p>
+                    </div>
+                  </div>
+                </div>
+            ) : error ? (
+                <div className="bg-red-800 text-white p-4 text-center">{error} <button onClick={() => setError(null)} className="font-bold ml-4">X</button></div>
+            ) : isLoading ? (
+                <div className="flex justify-center items-center h-full text-gray-500">Loading documentation...</div>
+            ) : isPreviewing ? (
                  <div className="p-6 md:p-10" id="documentation-preview-container">
                     <DocumentationPreview controllers={controllers} />
                 </div>
             ) : (
                  <main className="p-6">
                     <InputForm
-                        controllers={controllers}
-                        setControllers={setControllers}
+                        key={selectedItem?.controllerId + '-' + selectedItem?.routeId}
                         selectedItem={selectedItem}
+                        controllers={controllers}
+                        onUpdateController={handleUpdateController}
+                        onUpdateRoute={handleUpdateRoute}
                     />
                 </main>
             )}

@@ -1,21 +1,35 @@
-import React from 'react';
+
+import React, { useState, useEffect } from 'react';
 import type { Controller, ApiDoc, Header, Parameter, SchemaField, ApiResponse, HTTPMethod } from '../types';
 import { httpMethods } from '../types';
 import { PlusIcon } from './icons/PlusIcon';
 import { TrashIcon } from './icons/TrashIcon';
 import { SelectedItem } from '../App';
+import { useDebouncedEffect } from '../hooks/useDebouncedEffect';
+import * as api from '../services/api';
 
 interface InputFormProps {
-  controllers: Controller[];
-  setControllers: React.Dispatch<React.SetStateAction<Controller[]>>;
   selectedItem: SelectedItem;
+  controllers: Controller[];
+  onUpdateController: (controller: Controller) => void;
+  onUpdateRoute: (controllerId: string, route: ApiDoc) => void;
 }
 
-const ControllerForm: React.FC<{controller: Controller, setControllers: Function}> = ({ controller, setControllers }) => {
-  const handleChange = (field: keyof Controller, value: any) => {
-    setControllers((prev: Controller[]) => prev.map(c => 
-      c.id === controller.id ? { ...c, [field]: value } : c
-    ));
+const ControllerForm: React.FC<{
+    initialController: Controller, 
+    onUpdate: (controller: Controller) => void 
+}> = ({ initialController, onUpdate }) => {
+  const [controller, setController] = useState(initialController);
+
+  useDebouncedEffect(() => {
+    // Prevent initial render from triggering an update
+    if (JSON.stringify(initialController) !== JSON.stringify(controller)) {
+       api.updateController(controller.id, controller).then(onUpdate);
+    }
+  }, [controller], 500);
+
+  const handleChange = (field: keyof Omit<Controller, 'id' | 'routes'>, value: any) => {
+    setController(prev => ({ ...prev, [field]: value }));
   };
   
   const handleHeaderChange = (id: string, field: keyof Header, value: string) => {
@@ -75,18 +89,27 @@ const ControllerForm: React.FC<{controller: Controller, setControllers: Function
 };
 
 
-const RouteForm: React.FC<{route: ApiDoc, controllerId: string, setControllers: Function}> = ({ route, controllerId, setControllers }) => {
+const RouteForm: React.FC<{
+    initialRoute: ApiDoc, 
+    controllerId: string, 
+    onUpdate: (controllerId: string, route: ApiDoc) => void
+}> = ({ initialRoute, controllerId, onUpdate }) => {
+  const [route, setRoute] = useState(initialRoute);
+
+  useDebouncedEffect(() => {
+    if (JSON.stringify(initialRoute) !== JSON.stringify(route)) {
+        api.updateRoute(controllerId, route.id, route).then(updatedController => {
+            // Find the updated route from the controller response
+            const updatedRouteFromServer = updatedController.routes.find(r => r.id === route.id);
+            if (updatedRouteFromServer) {
+                onUpdate(controllerId, updatedRouteFromServer);
+            }
+        });
+    }
+  }, [route], 500);
 
   const updateRoute = (key: keyof ApiDoc, value: any) => {
-      setControllers((prev: Controller[]) => prev.map(c => {
-        if (c.id === controllerId) {
-            return {
-                ...c,
-                routes: c.routes.map(r => r.id === route.id ? { ...r, [key]: value } : r)
-            }
-        }
-        return c;
-    }));
+      setRoute(prev => ({...prev, [key]: value}));
   };
 
   const handleArrayChange = <T,>(arrayName: keyof ApiDoc, itemId: string, field: keyof T, value: any) => {
@@ -301,7 +324,12 @@ const RouteForm: React.FC<{route: ApiDoc, controllerId: string, setControllers: 
 };
 
 
-export const InputForm: React.FC<InputFormProps> = ({ controllers, setControllers, selectedItem }) => {
+export const InputForm: React.FC<InputFormProps> = ({ 
+    selectedItem, 
+    controllers, 
+    onUpdateController, 
+    onUpdateRoute 
+}) => {
 
   const data = React.useMemo(() => {
     if (!selectedItem) return null;
@@ -330,8 +358,8 @@ export const InputForm: React.FC<InputFormProps> = ({ controllers, setController
 
   return (
     <div>
-      {data.type === 'controller' && <ControllerForm controller={data.controller} setControllers={setControllers} />}
-      {data.type === 'route' && <RouteForm route={data.route} controllerId={data.controllerId} setControllers={setControllers} />}
+      {data.type === 'controller' && <ControllerForm initialController={data.controller} onUpdate={onUpdateController} />}
+      {data.type === 'route' && <RouteForm initialRoute={data.route} controllerId={data.controllerId} onUpdate={onUpdateRoute} />}
     </div>
   );
 };
