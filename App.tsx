@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from 'react';
+
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { InputForm } from './components/InputForm';
 import { DocumentationPreview } from './components/DocumentationPreview';
 import { Sidebar } from './components/Sidebar';
@@ -57,6 +58,21 @@ const initialControllers: Controller[] = [
   }
 ];
 
+const loadState = (): Controller[] => {
+  try {
+    const serializedState = localStorage.getItem('api-docs-data');
+    if (serializedState === null) {
+      return initialControllers;
+    }
+    const parsedState = JSON.parse(serializedState);
+    return parsedState.length > 0 ? parsedState : initialControllers;
+  } catch (err) {
+    console.error("Could not load state from local storage", err);
+    return initialControllers;
+  }
+};
+
+
 export type SelectedItem = {
   type: 'controller' | 'route';
   controllerId: string;
@@ -64,11 +80,29 @@ export type SelectedItem = {
 } | null;
 
 const App: React.FC = () => {
-  const [controllers, setControllers] = useState<Controller[]>(initialControllers);
-  const [selectedItem, setSelectedItem] = useState<SelectedItem>({ type: 'route', controllerId: initialId1, routeId: initialId2});
+  const [controllers, setControllers] = useState<Controller[]>(loadState);
+  const [selectedItem, setSelectedItem] = useState<SelectedItem>(null);
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  const [exportButtonText, setExportButtonText] = useState('Export to Markdown');
+  const [feedbackMessage, setFeedbackMessage] = useState('');
+  const importFileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    try {
+      const serializedState = JSON.stringify(controllers);
+      localStorage.setItem('api-docs-data', serializedState);
+    } catch (err) {
+      console.error("Could not save state to local storage", err);
+    }
+  }, [controllers]);
+
+  useEffect(() => {
+    if(feedbackMessage) {
+        const timer = setTimeout(() => setFeedbackMessage(''), 3000);
+        return () => clearTimeout(timer);
+    }
+  }, [feedbackMessage]);
+
 
   const selectedData = useMemo(() => {
     if (!selectedItem) return null;
@@ -133,14 +167,121 @@ const App: React.FC = () => {
       setSelectedItem({ type: 'controller', controllerId });
     }
   };
+  
+  const downloadFile = (content: string, filename: string, contentType: string) => {
+      const blob = new Blob([content], { type: contentType });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+  };
 
-  const handleExportMarkdown = () => {
+  const handleCopyMarkdown = () => {
     const markdown = generateFullMarkdown(controllers);
     navigator.clipboard.writeText(markdown).then(() => {
-      setExportButtonText('Copied!');
-      setTimeout(() => setExportButtonText('Export to Markdown'), 2000);
+      setFeedbackMessage('Markdown copied to clipboard!');
     });
   };
+
+  const handleDownloadMarkdown = () => {
+    const markdown = generateFullMarkdown(controllers);
+    downloadFile(markdown, 'api-documentation.md', 'text/markdown');
+  };
+
+  const handleDownloadHtml = async () => {
+    const previewNode = document.getElementById('documentation-preview-container');
+    if (!previewNode) {
+        alert("Preview content not found!");
+        return;
+    }
+
+    const tailwindUrl = 'https://cdn.tailwindcss.com';
+    try {
+        const [tailwindCss, customCss] = await Promise.all([
+            fetch(tailwindUrl).then(res => res.text()),
+            Promise.resolve(document.getElementById('custom-styles')?.innerHTML || '')
+        ]);
+        
+        const htmlContent = `
+            <!DOCTYPE html>
+            <html lang="en">
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>API Documentation</title>
+                <style>${tailwindCss}</style>
+                <style>${customCss}</style>
+            </head>
+            <body class="bg-gray-900 text-gray-200 font-sans">
+                <div class="p-6 md:p-10">${previewNode.innerHTML}</div>
+            </body>
+            </html>`;
+        
+        downloadFile(htmlContent, 'api-documentation.html', 'text/html');
+
+    } catch (error) {
+        console.error("Failed to fetch CSS for HTML export:", error);
+        alert("Could not generate HTML file. Failed to fetch required CSS.");
+    }
+  };
+
+  const handleExportJson = () => {
+      const json = JSON.stringify(controllers, null, 2);
+      downloadFile(json, 'api-docs-backup.json', 'application/json');
+  };
+  
+  const handleImportJson = (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (e) => {
+          try {
+              const text = e.target?.result as string;
+              const importedControllers = JSON.parse(text);
+              // Basic validation
+              if (Array.isArray(importedControllers)) {
+                  setControllers(importedControllers);
+                  setSelectedItem(null);
+                  setFeedbackMessage("Documentation restored successfully!");
+              } else {
+                  throw new Error("Invalid JSON format.");
+              }
+          } catch (error) {
+              alert("Failed to import JSON. Please check the file format.");
+              console.error(error);
+          }
+      };
+      reader.readAsText(file);
+       // Reset file input value to allow importing the same file again
+      if (importFileRef.current) {
+        importFileRef.current.value = "";
+      }
+  };
+
+
+  const ExportMenu: React.FC = () => {
+    const [isOpen, setIsOpen] = useState(false);
+    return (
+        <div className="relative">
+            <button onClick={() => setIsOpen(!isOpen)} className="bg-gray-600 hover:bg-gray-500 text-white font-semibold py-2 px-4 rounded-md text-sm transition-colors flex items-center gap-1">
+                Export <span>▼</span>
+            </button>
+            {isOpen && (
+                <div className="absolute right-0 mt-2 w-48 bg-gray-700 rounded-md shadow-lg z-30 border border-gray-600">
+                    <button onClick={() => { handleCopyMarkdown(); setIsOpen(false); }} className="block w-full text-left px-4 py-2 text-sm text-gray-200 hover:bg-gray-600">Copy Markdown</button>
+                    <button onClick={() => { handleDownloadMarkdown(); setIsOpen(false); }} className="block w-full text-left px-4 py-2 text-sm text-gray-200 hover:bg-gray-600">Download .md</button>
+                    <button onClick={() => { handleDownloadHtml(); setIsOpen(false); }} className="block w-full text-left px-4 py-2 text-sm text-gray-200 hover:bg-gray-600">Download .html</button>
+                    <button onClick={() => { handleExportJson(); setIsOpen(false); }} className="block w-full text-left px-4 py-2 text-sm text-gray-200 hover:bg-gray-600 border-t border-gray-600">Export .json</button>
+                </div>
+            )}
+        </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-900 text-gray-200 flex flex-col">
@@ -149,12 +290,15 @@ const App: React.FC = () => {
           API Documentation Builder
         </h1>
         <div className="flex items-center gap-4">
-          <button 
-            onClick={handleExportMarkdown}
-            className="bg-gray-600 hover:bg-gray-500 text-white font-semibold py-2 px-4 rounded-md text-sm transition-colors"
-          >
-           {exportButtonText}
-          </button>
+            {feedbackMessage && <span className="text-sm text-green-400 animate-fade-in">{feedbackMessage}</span>}
+             <input type="file" ref={importFileRef} onChange={handleImportJson} accept=".json" style={{display: 'none'}} />
+             <button
+                onClick={() => importFileRef.current?.click()}
+                className="bg-gray-600 hover:bg-gray-500 text-white font-semibold py-2 px-4 rounded-md text-sm transition-colors"
+             >
+                Import JSON
+             </button>
+             <ExportMenu />
           <button 
             onClick={() => setIsPreviewing(!isPreviewing)}
             className="bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-2 px-4 rounded-md transition-colors"
@@ -164,33 +308,37 @@ const App: React.FC = () => {
         </div>
       </header>
       <div className="flex flex-grow overflow-hidden">
-        <aside className={`bg-gray-800 h-full overflow-y-auto p-4 border-r border-gray-700 transition-all duration-300 ${isSidebarCollapsed ? 'w-16' : 'w-1/4'}`}>
-          <Sidebar 
-            controllers={controllers}
-            selectedItem={selectedItem}
-            isCollapsed={isSidebarCollapsed}
-            onSetIsCollapsed={setIsSidebarCollapsed}
-            onSelectItem={setSelectedItem}
-            onAddController={handleAddController}
-            onAddRoute={handleAddRoute}
-            onDeleteController={handleDeleteController}
-            onDeleteRoute={handleDeleteRoute}
-          />
-        </aside>
-        
-        {isPreviewing ? (
-           <div className="flex-grow bg-gray-900 h-full overflow-y-auto p-6">
-              <DocumentationPreview controllers={controllers} />
-           </div>
-        ) : (
-           <main className="flex-grow h-full overflow-y-auto p-6">
-              <InputForm
-                controllers={controllers}
-                setControllers={setControllers}
-                selectedItem={selectedItem}
-              />
-           </main>
+        {!isPreviewing && (
+             <aside className={`bg-gray-800 h-full overflow-y-auto p-4 border-r border-gray-700 transition-all duration-300 ${isSidebarCollapsed ? 'w-16' : 'w-1/4 min-w-[250px]'}`}>
+                <Sidebar 
+                    controllers={controllers}
+                    selectedItem={selectedItem}
+                    isCollapsed={isSidebarCollapsed}
+                    onSetIsCollapsed={setIsSidebarCollapsed}
+                    onSelectItem={setSelectedItem}
+                    onAddController={handleAddController}
+                    onAddRoute={handleAddRoute}
+                    onDeleteController={handleDeleteController}
+                    onDeleteRoute={handleDeleteRoute}
+                />
+            </aside>
         )}
+        
+        <div className="flex-grow bg-gray-900 h-full overflow-y-auto">
+            {isPreviewing ? (
+                 <div className="p-6 md:p-10" id="documentation-preview-container">
+                    <DocumentationPreview controllers={controllers} />
+                </div>
+            ) : (
+                 <main className="p-6">
+                    <InputForm
+                        controllers={controllers}
+                        setControllers={setControllers}
+                        selectedItem={selectedItem}
+                    />
+                </main>
+            )}
+        </div>
       </div>
     </div>
   );
