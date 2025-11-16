@@ -2,7 +2,7 @@
 
 import type { Controller, ApiDoc } from '../types';
 
-const API_BASE_URL = 'http://localhost:5000/api';
+const API_BASE_URL = 'https://api-ducumentation-generator.vercel.app/api';
 
 async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     try {
